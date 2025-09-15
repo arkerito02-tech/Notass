@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Notas rápidas</title>
+  <style>
+    :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--glass: rgba(255,255,255,0.03)}
+    *{box-sizing:border-box;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial}
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#071029 0%, #071a2b 100%);color:#e6eef6}
+    .app{max-width:980px;margin:18px auto;padding:14px}
+    header{display:flex;align-items:center;gap:12px}
+    h1{font-size:20px;margin:0}
+    .sub{color:var(--muted);font-size:13px}
+
+    /* layout */
+    .container{display:grid;grid-template-columns:1fr 360px;gap:14px;margin-top:14px}
+    @media (max-width:880px){.container{grid-template-columns:1fr} .sidebar{order:2}}
+
+    /* editor */
+    .card{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6)}
+    .field{display:flex;flex-direction:column;gap:8px}
+    input[type=text]{padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
+    textarea{min-height:160px;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;resize:vertical}
+    .row{display:flex;gap:8px;align-items:center}
+    button{background:var(--accent);border:none;padding:10px 12px;border-radius:9px;color:#052025;font-weight:600;cursor:pointer}
+    button.ghost{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.03)}
+
+    /* sidebar */
+    .sidebar{height:100%}
+    .search{margin-bottom:8px}
+    .list{display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow:auto;padding-right:6px}
+    .note-item{padding:10px;border-radius:10px;background:var(--glass);cursor:pointer;border:1px solid rgba(255,255,255,0.02)}
+    .note-title{font-weight:600}
+    .note-meta{font-size:12px;color:var(--muted)}
+
+    .empty{color:var(--muted);text-align:center;padding:40px 10px}
+    .top-actions{display:flex;gap:8px;align-items:center}
+    footer{margin-top:12px;color:var(--muted);font-size:13px;text-align:center}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" aria-hidden>
+        <rect x="2" y="3" width="20" height="18" rx="2" fill="#071a2b" stroke="#06b6d4" stroke-width="1.5"></rect>
+        <path d="M7 8h10M7 12h6" stroke="#06b6d4" stroke-width="1.6" stroke-linecap="round"></path>
+      </svg>
+      <div>
+        <h1>Notas rápidas</h1>
+        <div class="sub">Guarda notas en tu navegador. Funciona offline y en móvil.</div>
+      </div>
+    </header>
+
+    <div class="container">
+      <main>
+        <div class="card">
+          <div class="field">
+            <input id="title" type="text" placeholder="Título (opcional)" autocomplete="off">
+            <textarea id="content" placeholder="Escribe algo..."></textarea>
+            <div class="row">
+              <button id="save">Guardar</button>
+              <button id="new" class="ghost">Nueva nota</button>
+              <button id="export" class="ghost">Exportar (JSON)</button>
+              <button id="importBtn" class="ghost">Importar</button>
+              <input id="fileInput" type="file" accept="application/json" style="display:none">
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="sub">Nota abierta</div>
+          <div id="preview" style="white-space:pre-wrap;margin-top:8px;min-height:40px;color:inherit"></div>
+        </div>
+      </main>
+
+      <aside class="sidebar">
+        <div class="card">
+          <div class="top-actions row" style="justify-content:space-between">
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="search" class="search" type="text" placeholder="Buscar notas..." style="padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);background:transparent;color:inherit">
+            </div>
+            <div style="display:flex;gap:8px">
+              <button id="clearAll" class="ghost">Borrar todo</button>
+            </div>
+          </div>
+
+          <div id="notesList" class="list" aria-live="polite"></div>
+          <div id="empty" class="empty">No hay notas. Crea la primera con "Guardar".</div>
+        </div>
+      </aside>
+    </div>
+
+    <footer>Consejo: guarda el archivo HTML en tu móvil y ábrelo en el navegador para usarlo como app de notas.</footer>
+  </div>
+
+  <script>
+    // Simple notes app using localStorage
+    const KEY = 'notas_app_v1';
+    let notes = JSON.parse(localStorage.getItem(KEY) || '[]');
+    let currentId = null;
+
+    const titleEl = document.getElementById('title');
+    const contentEl = document.getElementById('content');
+    const saveBtn = document.getElementById('save');
+    const newBtn = document.getElementById('new');
+    const notesList = document.getElementById('notesList');
+    const empty = document.getElementById('empty');
+    const preview = document.getElementById('preview');
+    const search = document.getElementById('search');
+    const clearAll = document.getElementById('clearAll');
+    const exportBtn = document.getElementById('export');
+    const importBtn = document.getElementById('importBtn');
+    const fileInput = document.getElementById('fileInput');
+
+    function saveNotes(){ localStorage.setItem(KEY, JSON.stringify(notes)); }
+
+    function uid(){return Date.now().toString(36) + Math.random().toString(36).slice(2,8)}
+
+    function renderList(filter=''){
+      notesList.innerHTML = '';
+      const filtered = notes.slice().reverse().filter(n=> (n.title||'').toLowerCase().includes(filter) || (n.content||'').toLowerCase().includes(filter));
+      if(filtered.length===0){ empty.style.display='block'; } else { empty.style.display='none'; }
+      filtered.forEach(n=>{
+        const el = document.createElement('div');
+        el.className = 'note-item';
+        el.innerHTML = `<div class='note-title'>${escapeHtml(n.title||n.content.substring(0,40)||'Sin título')}</div>
+                        <div class='note-meta'>${new Date(n.updated).toLocaleString()}</div>`;
+        el.onclick = ()=>openNote(n.id);
+        notesList.appendChild(el);
+      });
+    }
+
+    function openNote(id){
+      const n = notes.find(x=>x.id===id);
+      if(!n) return;
+      currentId = id;
+      titleEl.value = n.title || '';
+      contentEl.value = n.content || '';
+      preview.textContent = (n.title? n.title + '\n\n' : '') + n.content;
+      saveBtn.textContent = 'Actualizar';
+    }
+
+    function newNote(){ currentId = null; titleEl.value=''; contentEl.value=''; preview.textContent=''; saveBtn.textContent='Guardar'; }
+
+    function saveCurrent(){
+      const t = titleEl.value.trim();
+      const c = contentEl.value.trim();
+      if(!t && !c){ alert('La nota está vacía'); return; }
+      if(currentId){
+        const n = notes.find(x=>x.id===currentId);
+        if(n){ n.title = t; n.content = c; n.updated = Date.now(); }
+      } else {
+        notes.push({id:uid(), title:t, content:c, created:Date.now(), updated:Date.now()});
+      }
+      saveNotes(); renderList(search.value.toLowerCase()); newNote();
+    }
+
+    function escapeHtml(s){ return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+
+    // delete all
+    clearAll.addEventListener('click', ()=>{
+      if(confirm('¿Borrar todas las notas? Esta acción no tiene vuelta atrás.')){
+        notes=[]; saveNotes(); renderList(); newNote();
+      }
+    });
+
+    saveBtn.addEventListener('click', saveCurrent);
+    newBtn.addEventListener('click', newNote);
+
+    search.addEventListener('input', (e)=>renderList(e.target.value.trim().toLowerCase()));
+
+    // Export
+    exportBtn.addEventListener('click', ()=>{
+      const data = JSON.stringify(notes, null, 2);
+      const blob = new Blob([data], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'notas.json'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // Import
+    importBtn.addEventListener('click', ()=>fileInput.click());
+    fileInput.addEventListener('change', async (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      try{
+        const text = await f.text();
+        const parsed = JSON.parse(text);
+        if(!Array.isArray(parsed)) throw new Error('Formato inválido');
+        // merge: keep existing, add new ones
+        const existingIds = new Set(notes.map(n=>n.id));
+        parsed.forEach(n=>{ if(n.id && !existingIds.has(n.id)) notes.push(n); });
+        saveNotes(); renderList(); alert('Importación completa');
+      }catch(err){ alert('Error al importar: '+err.message); }
+      fileInput.value = '';
+    });
+
+    // load
+    renderList();
+
+    // allow quick save with Ctrl/Cmd+S
+    document.addEventListener('keydown', (e)=>{
+      if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){
+        e.preventDefault(); saveCurrent();
+      }
+    });
+
+    // tap to preview update
+    contentEl.addEventListener('input', ()=>{
+      preview.textContent = (titleEl.value? titleEl.value + '\n\n' : '') + contentEl.value;
+    });
+
+    // quick open last note on load
+    if(notes.length>0) openNote(notes[notes.length-1].id);
+  </script>
+</body>
+</html>
